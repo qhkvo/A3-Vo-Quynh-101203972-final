@@ -96,7 +96,7 @@ public class Deck {
     public Card drawCard() {
         // Draw the top card in cards list
         if (!cards.isEmpty()) {
-            return cards.removeFirst();
+            return cards.remove(0);
         }
         //If the deck is empty
         return null;

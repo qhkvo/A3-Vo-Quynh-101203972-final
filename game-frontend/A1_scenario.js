@@ -93,4 +93,7 @@ let A1ScenarioInputs = [
                         "3\n" + "2\n" + "2\n" + "quit\n" + "1\n" + "1\n" + "1\n" + "2\n" + "quit\n" +
                         "11\n" + "11\n" + "11\n" + "11\n";  // Sponsor trims to 12 cards
                         ]
-playGame();
+
+
+
+A1_scenario();

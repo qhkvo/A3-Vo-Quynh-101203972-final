@@ -1,13 +1,22 @@
 package game;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.PrintWriter;
 import java.util.*;
 
 public class Player {
+    private static final Logger log = LoggerFactory.getLogger(Player.class);
     private List<Card> hand;
     private int totalShields;
     private int previousStageValue;
     private List<Card> selectedAttackCards;
+    private List<String> messages;
+    private Set<Integer> globalSelectedCardPositions = new HashSet<>(); // Tracks selected card positions across all stages
+    private Set<Integer> selectedCardPositions = new HashSet<>(); // Tracks selected card positions for the current stage
+    private int currentStage = 0;
+    private boolean questSetupComplete = false;
 
     public Player() {
         // Initialize an empty hand
@@ -15,6 +24,7 @@ public class Player {
         this.totalShields = 0;
         this.previousStageValue = 0;
         this.selectedAttackCards = new ArrayList<>();
+        messages = new ArrayList<>();
     }
 
     public void addCardToHand(Card card) {
@@ -22,29 +32,33 @@ public class Player {
     }
 
     // Display only the newly drawn cards
-    public void displayNewlyDrawnCards(PrintWriter printWriter, int initialHandSize) {
-        printWriter.println("Newly drawn cards:");
+    public String displayNewlyDrawnCards(int initialHandSize) {
+        messages.add("Newly drawn cards:");
         for (int i = initialHandSize; i < hand.size(); i++) {
-            printWriter.println((i + 1) + ". " + hand.get(i).toString());
+            messages.add((i + 1) + ". " + hand.get(i).toString());
         }
+        return String.join("\n", messages);
     }
 
     // Display the player's hand
-    public void displayHand(PrintWriter printWriter) {
-        printWriter.println("Hand:");
+    public List<String> displayHand() {
+        List<String> handDetails = new ArrayList<>();
         int cardNumber = 1;
         for (Card card : hand) {
-            printWriter.println(cardNumber + ". " + card.toString());
+            handDetails.add(cardNumber + ". " + card.toString());
             cardNumber++;
         }
+        return handDetails;
     }
 
-    public void displayUpdatedHand(PrintWriter printWriter) {
+
+    public String displayUpdatedHand() {
         List<String> cards = new ArrayList<>();
         for (Card card : hand) {
             cards.add(card.toString());
         }
-        printWriter.println("Your current hand: " + cards);
+        messages.add("Your current hand: " + cards);
+        return String.join("\n", messages);
     }
 
     // Sort cards in the player's hand (F -> W (S before H))
@@ -68,89 +82,96 @@ public class Player {
         totalShields += shieldsGained;
     }
 
-    public void setUpQuest(PrintWriter printWriter, Scanner input, List<List<Card>> stages, int stageCount) {
-        Set<Integer> globalSelectedCardPositions = new HashSet<>();  // Global set to track selected card positions across all stages
+    public String setUpQuest(String input, List<List<Card>> stages, int stageCount, int gameStage) {
+        messages.clear();
         List<Card> discardedCards = new ArrayList<>();
 
-        for (int i = 1; i <= stageCount; i++) {
-            List<Card> stageCards = new ArrayList<>();
-            Set<Integer> selectedCardPositions = new HashSet<>();  // Set to track selected card positions for the current stage
-
-            printWriter.println("---> SETTING UP STAGE " + i + " OF " + stageCount + " <---");
-            printWriter.flush();
-            sortHand();
-            displayHand(printWriter);
-
-            boolean validStage = false;
-
-            while (!validStage) {
-                printWriter.println("Enter the position of a card to include in this stage, or type 'Quit' to finish the stage:");
-                printWriter.flush();
-
-                String inputLine = input.nextLine().trim();
-
-                if (inputLine.equalsIgnoreCase("Quit")) {
-                    if (stageCards.isEmpty()) {
-                        printWriter.println("A stage cannot be empty. Please select at least one card.");
-                    } else if (!validateStage(stageCards)) {
-                        printWriter.println("Invalid stage: Each stage must contain exactly 1 Foe card and zero or more unique Weapon cards.");
-                    } else {
-                        int currentStageValue = calculateStageValue(stageCards);
-                        printWriter.println("Total stage value: " + currentStageValue);
-
-                        if (currentStageValue <= previousStageValue) {
-                            printWriter.println("Insufficient value for this stage. Stage value must be higher than the previous stage.");
-                        } else {
-                            stages.add(stageCards);
-                            previousStageValue = currentStageValue;
-                            printWriter.println("Stage " + i + " successfully set with the following cards:");
-
-                            for (Card card : stageCards) {
-                                printWriter.println(card.toString());
-                            }
-                            discardedCards.addAll(stageCards);
-                            validStage = true;  // Move to the next stage
-                        }
-                    }
-                } else {
-                    try {
-                        int cardPosition = Integer.parseInt(inputLine) - 1;
-
-                        if (cardPosition < 0 || cardPosition >= hand.size()) {
-                            printWriter.println("Invalid input. Please enter a valid card position.");
-                            continue;
-                        }
-
-                        // Check if the card has already been selected for any stage
-                        if (selectedCardPositions.contains(cardPosition) || globalSelectedCardPositions.contains(cardPosition)) {
-                            printWriter.println("This card has already been selected for this stage or another stage. Please choose a different card.");
-                            continue;
-                        }
-
-                        Card selectedCard = hand.get(cardPosition);
-
-                        if (isInvalidCardForStage(selectedCard, stageCards)) {
-                            printWriter.println("Invalid card: You can only have one Foe and no repeated Weapon cards in a stage.");
-                        } else {
-                            stageCards.add(selectedCard);
-                            selectedCardPositions.add(cardPosition);  // Track the selected card position for this stage
-                            globalSelectedCardPositions.add(cardPosition);  // Track the selected card position across all stages
-                            printWriter.println("Added " + selectedCard + " to stage " + i);
-                        }
-                    } catch (NumberFormatException e) {
-                        printWriter.println("Invalid input. Please enter a valid card position.");
-                    }
-                }
-
-            }
+        if (currentStage == 0) {  // Initialize
+            currentStage = 1;
+            previousStageValue = 0;
+            globalSelectedCardPositions.clear();
+            questSetupComplete = false;
         }
 
-        hand.removeAll(discardedCards);
+//        if (currentStage > stageCount) {
+//            hand.removeAll(discardedCards);
+//            messages.add("Quest setup complete.");
+//            questSetupComplete = true;
+//            previousStageValue = 0;
+//            return String.join("\n", messages);
+//        }
 
-        printWriter.println("Quest setup complete.");
-        printWriter.println();
-        printWriter.flush();
+        while (stages.size() < currentStage) stages.add(new ArrayList<>());
+        List<Card> stageCards = stages.get(currentStage - 1);
+
+        if (input == null) {
+            messages.add("---> SETTING UP STAGE " + currentStage + " OF " + stageCount + " <---");
+            sortHand();
+            messages.addAll(displayHand());
+            messages.add("Enter the position of a card to include in this stage, or type 'Quit' to finish the stage:");
+            return String.join("\n", messages);
+        }
+
+        if (input.equalsIgnoreCase("Quit")) {
+            if (stageCards.isEmpty()) {
+                messages.add("A stage cannot be empty. Please select at least one card.");
+            } else if (!validateStage(stageCards)) {
+                messages.add("Invalid stage: Each stage must contain exactly 1 Foe card and zero or more unique Weapon cards.");
+            } else {
+                int currentStageValue = calculateStageValue(stageCards);
+                if (currentStageValue <= previousStageValue) {
+                    messages.add("Insufficient value for this stage. Stage value must be higher than the previous stage.");
+                } else {
+                    previousStageValue = currentStageValue;
+                    messages.add("Stage " + (currentStage) + " successfully set with the following cards:");
+                    for (Card card : stageCards) {
+                        messages.add(card.toString());
+                    }
+                    discardedCards.addAll(stageCards);
+                    selectedCardPositions.clear();
+                    currentStage++;
+
+                    if (currentStage > stageCount) {
+                        hand.removeAll(discardedCards);
+                        messages.add("Quest setup complete.");
+                        questSetupComplete = true;
+                        previousStageValue = 0;
+                        return String.join("\n", messages);
+                        //return setUpQuest(null, stages, stageCount, gameStage); // Pass null to trigger final check
+                    } else {
+                        messages.add("---> SETTING UP STAGE " + currentStage + " OF " + stageCount + " <---");
+                        sortHand();
+                        messages.addAll(displayHand());
+                        messages.add("Enter the position of a card to include in this stage, or type 'Quit' to finish the stage:");
+                    }
+                }
+            }
+        } else {
+            try {
+                int cardPosition = Integer.parseInt(input) - 1;
+
+                if (cardPosition < 0 || cardPosition >= hand.size()) {
+                    messages.add("Invalid input. Please enter a valid card position.");
+                } else if ( selectedCardPositions.contains(cardPosition) || globalSelectedCardPositions.contains(cardPosition)) {
+                    messages.add("This card has already been selected for this stage or another stage. Please choose a different card.");
+                } else {
+                    Card selectedCard = hand.get(cardPosition);
+                    if (isInvalidCardForStage(selectedCard, stageCards)) {
+                        messages.add("Invalid card: You can only have one Foe and no repeated Weapon cards in a stage.");
+                    } else {
+                        stageCards.add(selectedCard);
+                        selectedCardPositions.add(cardPosition);  // Track the selected card position for this stage
+                        globalSelectedCardPositions.add(cardPosition);  // Track the selected card position across all stages
+                        messages.add("Added " + selectedCard + " to stage " + currentStage);
+                    }
+                }
+            } catch (NumberFormatException e) {
+                messages.add("Invalid input. Please enter a valid card position.");
+            }
+
+        }
         previousStageValue = 0;
+        return String.join("\n", messages);
     }
 
 
@@ -173,11 +194,11 @@ public class Player {
             // Check if there's a repeated Weapon card in this stage
             for (Card card : stageCards) {
                 if (card.getType().equals(selectedCard.getType())) {
-                    return true;  // Duplicate Weapon card
+                    return true;
                 }
             }
         }
-        return false;  // Valid card for the stage
+        return false;
     }
 
     // Validate that the stage contains exactly 1 Foe card and unique Weapon cards
@@ -232,6 +253,12 @@ public class Player {
     }
     public int getTotalShield() {
         return totalShields;
+    }
+    public boolean hasFinishedQuestSetup() {
+        return questSetupComplete;
+    }
+    public int getCurrentStage() {
+        return currentStage;
     }
 
     // Calculate the player's attack value based on the selected attack cards
